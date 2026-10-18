@@ -176,7 +176,7 @@ def load_scrutins():
             "requis": txt(syn.get("nbrSuffragesRequis")),
             "seance": txt(s.get("seanceRef")),
             "seanceNum": txt(s.get("quantiemeJourSeance")),
-            "dossierRef": txt(obj.get("dossierLegislatif")) or txt((obj.get("referenceLegislative") or {}).get("dossierRef") if isinstance(obj.get("referenceLegislative"), dict) else ""),
+            "dossierRef": txt(obj.get("dossierLegislatif")),
         })
         info = {k: v for k, v in info.items() if v not in ("", None)}
         index.append({"n": num, "date": date, "titre": titre, "sort": sort, "type": typ})
@@ -186,24 +186,59 @@ def load_scrutins():
     return index, details
 
 
+REF_TEXTE = re.compile(r"^(PRJL|PION|PNRE|RION|TAP|PRO|RAPP|AVIS|TA)\w*\d")
+
+
+def refs_textes(obj, out):
+    """Toutes les références de textes citées dans un dossier (actes, textes associés, adoptés…)."""
+    if isinstance(obj, dict):
+        for v in obj.values():
+            refs_textes(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            refs_textes(v, out)
+    elif isinstance(obj, str) and REF_TEXTE.match(obj):
+        out.add(obj)
+
+
 def enrich_dossiers(details):
-    refs = {d["info"].get("dossierRef") for d in details.values()} - {None}
     zf = download(URL_DOSSIERS)
-    dossiers = {}
+    dossiers, par_texte = {}, {}
     for _, d in iter_json(zf):
         dp = d.get("dossierParlementaire")
         if not dp:
             continue
         uid = txt(dp.get("uid"))
         t = dp.get("titreDossier") or {}
-        dossiers[uid] = {"titre": txt(t.get("titre")), "chemin": txt(t.get("titreChemin"))}
-    n = 0
+        info = {"titre": txt(t.get("titre")), "chemin": txt(t.get("titreChemin"))}
+        dossiers[uid] = info
+        refs = set()
+        refs_textes(dp.get("actesLegislatifs"), refs)
+        for r in refs:
+            par_texte.setdefault(r, info)
+    direct = 0
     for d in details.values():
-        ref = d["info"].get("dossierRef")
-        if ref in dossiers:
-            d["info"]["dossier"] = dossiers[ref]
-            n += 1
-    notice(f"Dossiers : {len(dossiers)} lus, {n} scrutins reliés à un dossier ({len(refs)} références)")
+        i = d["info"]
+        doss = dossiers.get(i.get("dossierRef")) or par_texte.get(i.get("texteRef"))
+        if doss:
+            i["dossier"] = doss
+            direct += 1
+    # Même texte (même libellé officiel) => même dossier
+    par_nom = {}
+    for d in details.values():
+        i = d["info"]
+        if "dossier" in i and i.get("texte"):
+            par_nom.setdefault((i["texte"].lower(), i.get("lecture", "")), i["dossier"])
+            par_nom.setdefault((i["texte"].lower(), ""), i["dossier"])
+    propage = 0
+    for d in details.values():
+        i = d["info"]
+        if "dossier" not in i and i.get("texte"):
+            doss = par_nom.get((i["texte"].lower(), i.get("lecture", ""))) or par_nom.get((i["texte"].lower(), ""))
+            if doss:
+                i["dossier"] = doss
+                propage += 1
+    notice(f"Dossiers : {len(dossiers)} lus, {len(par_texte)} textes indexés, {direct} scrutins reliés directement, {propage} par le même texte, sur {len(details)}")
 
 
 def enrich_agenda(details):
@@ -253,7 +288,10 @@ def enrich_amendements(details):
         contenu = ((a.get("corps") or {}).get("contenuAuteur") or {})
         expose = strip_html(contenu.get("exposeSommaire"))
         auteur = txt((a.get("signataires") or {}).get("libelle"))
+        texte_ref = txt(a.get("texteLegislatifRef"))
         for d in cible:
+            if texte_ref:
+                d["info"]["texteRef"] = texte_ref
             if expose:
                 d["info"]["expose"] = expose
             if auteur:
@@ -273,7 +311,7 @@ def main():
     os.makedirs(os.path.join(OUT, "s"), exist_ok=True)
     groupes, deputes = load_acteurs()
     index, details = load_scrutins()
-    for etape in (enrich_agenda, enrich_dossiers, enrich_amendements):
+    for etape in (enrich_agenda, enrich_amendements, enrich_dossiers):
         try:
             etape(details)
         except Exception as e:
