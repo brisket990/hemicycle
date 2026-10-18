@@ -66,6 +66,14 @@ svg.focus circle.seat.on{opacity:1;stroke:var(--fg);stroke-width:1.6}
 .pbar span{display:block;height:100%;background:var(--accent)}
 .ring{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid var(--abst);box-sizing:border-box}
 @media (prefers-reduced-motion:reduce){circle.seat{transition:none}}
+.info{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:12px 0 4px;font-size:.86rem}
+.info dt{color:var(--muted)}
+.info dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.when{font-size:.88rem;margin-top:6px}
+details.expose{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;font-size:.86rem}
+details.expose summary{cursor:pointer;color:var(--accent);font-weight:600}
+details.expose p{white-space:pre-line;line-height:1.55;margin:8px 0 0}
+details.expose .src{color:var(--muted);font-size:.78rem;margin-top:6px}
 input[type=search]{font:inherit;font-size:.9rem;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);flex:1 1 200px;min-width:0}
 input[type=search]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 a{color:var(--accent)}
@@ -86,7 +94,9 @@ body{margin:0}
   <section class="card">
     <p class="title" id="sTitle"></p>
     <div class="meta" id="sMeta"></div>
+    <div class="when" id="sWhen"></div>
     <span class="res" id="sRes"></span>
+    <div id="sInfo"></div>
     <svg id="hemi" viewBox="0 0 1000 520" role="img" aria-label="Hémicycle"></svg>
     <div class="tally" id="tally"></div>
     <div class="pres" id="pres"></div>
@@ -166,7 +176,8 @@ function render(s){
   document.getElementById("pres").innerHTML=`<b class="num">${t.pres}</b> présents sur <span class="num">${flat.length}</span> · <span class="num">${Math.round(100*t.pres/Math.max(1,flat.length))} %</span><div class="pbar"><span style="width:${100*t.pres/Math.max(1,flat.length)}%"></span></div>`;
   document.getElementById("sTitle").textContent=s.titre;
   const lien=`https://www.assemblee-nationale.fr/dyn/${INDEX.legislature}/scrutins/${s.n}`;
-  document.getElementById("sMeta").innerHTML=`Scrutin n° ${s.n} · ${esc(s.date)}${s.type?` · ${esc(s.type)}`:""} · <a href="${lien}" target="_blank" rel="noopener">voir sur le site de l'Assemblée</a>`;
+  document.getElementById("sMeta").innerHTML=`Scrutin n° ${s.n}${s.type?` · ${esc(s.type)}`:""} · <a href="${lien}" target="_blank" rel="noopener">voir sur le site de l'Assemblée</a>`;
+  renderInfo(s);
   const adopt=s.sort?s.sort.startsWith("adopt"):t.pour>t.contre;
   const r=document.getElementById("sRes");r.textContent=adopt?"Adopté":"Rejeté";r.className="res "+(adopt?"ok":"ko");
   document.getElementById("chips").innerHTML=groups.map((g,gi)=>`<button class="chip" data-g="${gi}" aria-pressed="false" title="${esc(g.nom)}">${esc(g.code)}<small>${count(g.membres).pres}/${g.membres.length}</small></button>`).join("")
@@ -179,6 +190,36 @@ function render(s){
       <td class="n">${c.pres}/${g.membres.length}</td><td class="n">${c.pour}</td><td class="n">${c.contre}</td><td class="n">${c.abst}</td></tr>`}).join("");
   document.querySelectorAll("#groups tr").forEach(tr=>tr.addEventListener("click",()=>select(+tr.dataset.g)));
   select(null);
+}
+const ORD=n=>n==1?"1re":`${n}e`;
+function quand(s){
+  const i=s.info||{};
+  let txt="";
+  try{txt=new Date(s.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});}catch(e){txt=s.date;}
+  txt=txt.charAt(0).toUpperCase()+txt.slice(1);
+  const parts=[`<b>${esc(txt)}</b>`];
+  let seance=i.seanceNum?`${ORD(+i.seanceNum)} séance`:"";
+  if(i.debutSeance){try{const h=new Date(i.debutSeance).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"}).replace(":","h");
+    seance=(seance?seance+", ouverte":"Séance ouverte")+` à ${h}`;}catch(e){}}
+  if(seance) parts.push(seance);
+  return parts.join(" · ");
+}
+function renderInfo(s){
+  const i=s.info||{};
+  document.getElementById("sWhen").innerHTML=quand(s);
+  const rows=[];
+  const add=(k,v)=>{if(v)rows.push(`<dt>${k}</dt><dd>${v}</dd>`);};
+  add("Objet",esc(i.nature||""));
+  if(i.texte) add("Texte",esc(i.texte.charAt(0).toUpperCase()+i.texte.slice(1))+(i.lecture?` <span style="color:var(--muted)">(${esc(i.lecture)})</span>`:""));
+  if(i.article) add("Article",esc(i.article));
+  if(i.amendement) add("Amendement",`n° ${i.amendement}`);
+  add("Auteur",esc(i.auteur||""));
+  add("Scrutin demandé par",esc(i.demandeur||""));
+  if(i.requis) add("Majorité requise",`${esc(i.requis)} voix${i.exprimes?` sur ${esc(i.exprimes)} exprimées`:""}${i.majorite?` <span style="color:var(--muted)">(${esc(i.majorite.toLowerCase())})</span>`:""}`);
+  if(i.dossier&&i.dossier.chemin) add("Dossier",`<a href="https://www.assemblee-nationale.fr/dyn/${INDEX.legislature}/dossiers/${encodeURIComponent(i.dossier.chemin)}" target="_blank" rel="noopener">${esc(i.dossier.titre||"Voir le dossier")}</a>`);
+  let h=rows.length?`<dl class="info">${rows.join("")}</dl>`:"";
+  if(i.expose) h+=`<details class="expose"><summary>Exposé sommaire de l'auteur</summary><p>${esc(i.expose)}</p><div class="src">Texte rédigé par l'auteur de l'amendement pour le justifier, tel que publié par l'Assemblée nationale. Il présente son point de vue.</div></details>`;
+  document.getElementById("sInfo").innerHTML=h;
 }
 function select(gi,keep){
   if(!keep&&gi!==null&&gi===sel) gi=null;
@@ -213,7 +254,7 @@ pick.addEventListener("change",()=>load(pick.value));
     document.getElementById("status").textContent="Données introuvables : lancez d'abord « python3 update.py » dans ce dossier.";return;
   }
   document.getElementById("status").textContent=`${INDEX.scrutins.length} scrutins · ${INDEX.legislature}e législature · mis à jour le ${INDEX.maj.replace("T"," à ")}`;
-  document.getElementById("foot").innerHTML=`Données : open data de l'Assemblée nationale (<a href="${esc(INDEX.source)}">fichier source</a>), converties sans retouche par update.py. Seuls les scrutins publics ont un détail nominatif. Les votes par délégation comptent comme présents.`;
+  document.getElementById("foot").innerHTML=`Données : open data de l'Assemblée nationale (<a href="${esc(INDEX.source)}">fichier source</a>), converties sans retouche par update.py. Les informations sur chaque scrutin (objet, texte, auteur, horaire de la séance) viennent des mêmes fichiers officiels. Seuls les scrutins publics ont un détail nominatif. Les votes par délégation comptent comme présents.`;
   fill(); if(INDEX.scrutins.length) load(INDEX.scrutins[0].n);
 })();
 </script>

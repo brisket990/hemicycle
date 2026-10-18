@@ -8,7 +8,7 @@ Cron :   0 7 * * *  cd /chemin/hemicycle && python3 update.py >> update.log 2>&1
 
 Aucune dépendance : bibliothèque standard Python 3.8+.
 """
-import io, json, os, sys, zipfile, urllib.request, datetime
+import io, json, os, re, sys, html, tempfile, zipfile, urllib.request, datetime
 
 LEGISLATURE = os.environ.get("AN_LEGISLATURE", "17")
 BASE = f"https://data.assemblee-nationale.fr/static/openData/repository/{LEGISLATURE}"
@@ -17,6 +17,9 @@ URL_ACTEURS = os.environ.get(
     "AN_URL_ACTEURS",
     f"{BASE}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip",
 )
+URL_DOSSIERS = os.environ.get("AN_URL_DOSSIERS", f"{BASE}/loi/dossiers_legislatifs/Dossiers_Legislatifs.json.zip")
+URL_AGENDA = os.environ.get("AN_URL_AGENDA", f"{BASE}/vp/reunions/Agenda.json.zip")
+URL_AMENDEMENTS = os.environ.get("AN_URL_AMENDEMENTS", f"{BASE}/loi/amendements_div_legis/Amendements.json.zip")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
@@ -36,8 +39,15 @@ def txt(x):
 def download(url):
     print(f"Téléchargement {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "hemicycle-local/1.0"})
-    with urllib.request.urlopen(req, timeout=300) as r:
-        return zipfile.ZipFile(io.BytesIO(r.read()))
+    tmp = tempfile.TemporaryFile()
+    with urllib.request.urlopen(req, timeout=600) as r:
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            tmp.write(chunk)
+    tmp.seek(0)
+    return zipfile.ZipFile(tmp)
 
 
 def iter_json(zf):
@@ -79,6 +89,58 @@ def votants(decompte, key):
     return [txt(v.get("acteurRef")) for v in arr(bloc.get("votant")) if isinstance(v, dict)]
 
 
+def notice(msg):
+    """Visible dans l'onglet Actions de GitHub (et dans la console ailleurs)."""
+    print(f"::notice::{msg}" if os.environ.get("GITHUB_ACTIONS") else msg)
+
+
+def strip_html(x, limit=1500):
+    t = re.sub(r"<br\s*/?>|</p>", "\n", txt(x) or "", flags=re.I)
+    t = html.unescape(re.sub(r"<[^>]+>", "", t))
+    t = re.sub(r"[ \t\xa0]+", " ", t)
+    t = re.sub(r"\n\s*\n+", "\n\n", t).strip()
+    return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0] + " […]"
+
+
+TEXTE_RE = re.compile(r"((?:du |de la |des )?(?:projet|proposition) de (?:loi|résolution)[^()]*?)\s*(?:\(([^)]*)\))?\.?$", re.I)
+
+
+def analyse_titre(titre):
+    """Découpe le titre officiel en champs, sans rien ajouter."""
+    t = titre.strip()
+    low = t.lower()
+    if "sous-amendement" in low:
+        nature = "Sous-amendement"
+    elif "amendement" in low:
+        nature = "Amendement"
+    elif "motion de censure" in low:
+        nature = "Motion de censure"
+    elif "motion" in low:
+        nature = "Motion"
+    elif low.startswith("l'ensemble") or "l'ensemble du" in low or "l'ensemble de la" in low:
+        nature = "Vote sur l'ensemble du texte"
+    elif low.startswith("l'article") or low.startswith("les articles"):
+        nature = "Article"
+    elif "déclaration du gouvernement" in low:
+        nature = "Déclaration du Gouvernement"
+    else:
+        nature = ""
+    info = {"nature": nature}
+    m = re.search(r"amendement n[°o]\s*(\d+)", t, re.I)
+    if m:
+        info["amendement"] = int(m.group(1))
+    m = re.search(r"\b(?:à|après|avant) l'article ((?:premier|liminaire|\d+)(?:\s+(?:bis|ter|quater|quinquies|sexies|septies|octies|nonies|decies|(?-i:[A-Z])))*)\b", t, re.I) \
+        or re.search(r"^l'article ((?:premier|liminaire|\d+)(?:\s+(?:bis|ter|quater|quinquies|(?-i:[A-Z])))*)\b", t, re.I)
+    if m:
+        info["article"] = m.group(1)
+    m = TEXTE_RE.search(t)
+    if m:
+        info["texte"] = re.sub(r"^(du|de la|des) ", "", m.group(1).strip(), flags=re.I)
+        if m.group(2):
+            info["lecture"] = m.group(2)
+    return info
+
+
 def load_scrutins():
     zf = download(URL_SCRUTINS)
     index, details = [], {}
@@ -101,12 +163,103 @@ def load_scrutins():
         titre = txt(s.get("titre")) or txt((s.get("objet") or {}).get("libelle"))
         sort = txt((s.get("sort") or {}).get("code"))
         date = txt(s.get("dateScrutin"))
-        typ = txt((s.get("typeVote") or {}).get("libelleTypeVote"))
+        tv = s.get("typeVote") or {}
+        typ = txt(tv.get("libelleTypeVote"))
+        syn = s.get("syntheseVote") or {}
+        obj = s.get("objet") or {}
+        info = analyse_titre(titre)
+        info.update({
+            "majorite": txt(tv.get("typeMajorite")),
+            "demandeur": txt((s.get("demandeur") or {}).get("texte")),
+            "votants": txt(syn.get("nombreVotants")),
+            "exprimes": txt(syn.get("suffragesExprimes")),
+            "requis": txt(syn.get("nbrSuffragesRequis")),
+            "seance": txt(s.get("seanceRef")),
+            "seanceNum": txt(s.get("quantiemeJourSeance")),
+            "dossierRef": txt(obj.get("dossierLegislatif")) or txt((obj.get("referenceLegislative") or {}).get("dossierRef") if isinstance(obj.get("referenceLegislative"), dict) else ""),
+        })
+        info = {k: v for k, v in info.items() if v not in ("", None)}
         index.append({"n": num, "date": date, "titre": titre, "sort": sort, "type": typ})
-        details[num] = {"n": num, "date": date, "titre": titre, "sort": sort, "type": typ, "groupes": groupes}
+        details[num] = {"n": num, "date": date, "titre": titre, "sort": sort, "type": typ, "info": info, "groupes": groupes}
     index.sort(key=lambda x: (x["date"], x["n"]), reverse=True)
     print(f"  {len(index)} scrutins")
     return index, details
+
+
+def enrich_dossiers(details):
+    refs = {d["info"].get("dossierRef") for d in details.values()} - {None}
+    zf = download(URL_DOSSIERS)
+    dossiers = {}
+    for _, d in iter_json(zf):
+        dp = d.get("dossierParlementaire")
+        if not dp:
+            continue
+        uid = txt(dp.get("uid"))
+        t = dp.get("titreDossier") or {}
+        dossiers[uid] = {"titre": txt(t.get("titre")), "chemin": txt(t.get("titreChemin"))}
+    n = 0
+    for d in details.values():
+        ref = d["info"].get("dossierRef")
+        if ref in dossiers:
+            d["info"]["dossier"] = dossiers[ref]
+            n += 1
+    notice(f"Dossiers : {len(dossiers)} lus, {n} scrutins reliés à un dossier ({len(refs)} références)")
+
+
+def enrich_agenda(details):
+    seances = {d["info"].get("seance") for d in details.values()} - {None}
+    zf = download(URL_AGENDA)
+    debut = {}
+    for _, d in iter_json(zf):
+        r = d.get("reunion")
+        if not r:
+            continue
+        uid = txt(r.get("uid"))
+        if uid in seances:
+            debut[uid] = txt(r.get("timeStampDebut"))
+    n = 0
+    for d in details.values():
+        ts = debut.get(d["info"].get("seance"))
+        if ts:
+            d["info"]["debutSeance"] = ts
+            n += 1
+    notice(f"Agenda : heure de début trouvée pour {n} scrutins sur {len(details)}")
+
+
+def enrich_amendements(details):
+    voulus = {}
+    for d in details.values():
+        i = d["info"]
+        if "amendement" in i and "seance" in i:
+            voulus.setdefault((i["seance"], i["amendement"]), []).append(d)
+    zf = download(URL_AMENDEMENTS)
+    lus = trouves = 0
+    for name in zf.namelist():
+        if not name.endswith(".json"):
+            continue
+        try:
+            with zf.open(name) as f:
+                a = json.load(f).get("amendement")
+        except Exception:
+            continue
+        if not a:
+            continue
+        lus += 1
+        seance = txt(a.get("seanceDiscussionRef"))
+        m = re.match(r"\d+", txt((a.get("identification") or {}).get("numeroLong")) or "")
+        cible = voulus.get((seance, int(m.group(0)))) if (seance and m) else None
+        if not cible:
+            continue
+        contenu = ((a.get("corps") or {}).get("contenuAuteur") or {})
+        expose = strip_html(contenu.get("exposeSommaire"))
+        auteur = txt((a.get("signataires") or {}).get("libelle"))
+        for d in cible:
+            if expose:
+                d["info"]["expose"] = expose
+            if auteur:
+                d["info"]["auteur"] = strip_html(auteur, 300)
+        trouves += 1
+    notice(f"Amendements : {lus} lus, {trouves} reliés à un scrutin sur {len(voulus)} amendements votés")
 
 
 def write(path, obj):
@@ -120,6 +273,11 @@ def main():
     os.makedirs(os.path.join(OUT, "s"), exist_ok=True)
     groupes, deputes = load_acteurs()
     index, details = load_scrutins()
+    for etape in (enrich_agenda, enrich_dossiers, enrich_amendements):
+        try:
+            etape(details)
+        except Exception as e:
+            notice(f"{etape.__name__} ignoré : {e}")
     for num, d in details.items():
         write(os.path.join(OUT, "s", f"{num}.json"), d)
     write(os.path.join(OUT, "deputes.json"), {"groupes": groupes, "deputes": deputes})

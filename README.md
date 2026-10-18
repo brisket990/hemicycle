@@ -39,6 +39,14 @@ AN_URL_ACTEURS="https://…/AMO10_….json.zip" python3 update.py
 
 `AN_LEGISLATURE` (par défaut 17) change la législature.
 
+## Informations affichées par scrutin
+
+Objet du vote, texte et lecture, article, numéro et auteur de l'amendement,
+demandeur du scrutin, majorité requise, lien vers le dossier, et l'exposé
+sommaire de l'auteur quand il existe. Tout vient des fichiers officiels
+(scrutins, agenda, dossiers législatifs, amendements). L'heure affichée est
+celle de l'ouverture de la séance : l'heure exacte de chaque vote n'est pas publiée.
+
 ## Limites
 
 - Seuls les scrutins publics ont un détail par député ; les votes à main levée n'apparaissent pas.
