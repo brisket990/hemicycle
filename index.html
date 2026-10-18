@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hémicycle des votes</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one column — scrutin picker, hemicycle, tally, groups table */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --fg:#1b2130; --muted:#5d6577; --line:#dde1e8;
+  --accent:#1f3c88;
+  --pour:#2e9e57; --contre:#d1443a; --abst:#8b919c; --absent:#c9ced7;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12151c; --surface:#1a1f29; --fg:#e7eaf0; --muted:#9aa2b2; --line:#2a3140;
+  --accent:#8aa7ff; --pour:#45c072; --contre:#ef6257; --abst:#8d94a1; --absent:#3a4252; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151c; --surface:#1a1f29; --fg:#e7eaf0; --muted:#9aa2b2; --line:#2a3140;
+  --accent:#8aa7ff; --pour:#45c072; --contre:#ef6257; --abst:#8d94a1; --absent:#3a4252; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 32px}
+.wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:1.5rem;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:4px 0 0;font-size:.9rem}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select,.btn{font:inherit;font-size:.9rem;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+select{flex:1 1 240px;min-width:0}
+.btn{cursor:pointer;color:var(--accent);font-weight:600}
+.btn:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.title{font-weight:600;font-size:1rem;margin:0;text-wrap:balance}
+.meta{color:var(--muted);font-size:.82rem;margin-top:2px}
+.tag{display:inline-block;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--abst) 18%,transparent);color:var(--muted);margin-left:6px;vertical-align:middle}
+.res{display:inline-block;font-weight:700;font-size:.8rem;padding:2px 10px;border-radius:99px;margin-top:8px}
+.res.ok{background:color-mix(in srgb,var(--pour) 18%,transparent);color:var(--pour)}
+.res.ko{background:color-mix(in srgb,var(--contre) 18%,transparent);color:var(--contre)}
+svg{width:100%;height:auto;display:block}
+.tally{display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:center;font-size:.88rem;margin-top:4px}
+.tally span{display:flex;align-items:center;gap:6px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:500}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+.tip{min-height:1.4em;text-align:center;font-size:.85rem;color:var(--muted);margin-top:8px}
+.tip b{color:var(--fg)}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;padding:0 6px 8px}
+td{padding:6px;border-top:1px solid var(--line);vertical-align:middle}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--absent);min-width:80px}
+.tablebox{overflow-x:auto}
+.note{font-size:.8rem;color:var(--muted);line-height:1.5}
+.note code{font-family:var(--mono);font-size:.78rem}
+circle.seat{cursor:pointer;transition:opacity .2s,stroke-width .2s}
+svg.focus circle.seat{opacity:.1}
+svg.focus circle.seat.on{opacity:1;stroke:var(--fg);stroke-width:1.6}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}
+.chip{font:inherit;font-size:.78rem;font-weight:600;padding:5px 10px;border-radius:99px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;display:flex;gap:6px;align-items:center}
+.chip small{font-family:var(--mono);font-weight:500;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.chip[aria-pressed="true"] small{color:var(--surface)}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chip.all{color:var(--accent)}
+#groups tr.on td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.pres{font-size:.85rem;text-align:center;margin-top:10px;color:var(--muted)}
+.pres b{color:var(--fg)}
+.pbar{height:6px;border-radius:3px;background:var(--absent);overflow:hidden;max-width:320px;margin:6px auto 0}
+.pbar span{display:block;height:100%;background:var(--accent)}
+.ring{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid var(--abst);box-sizing:border-box}
+@media (prefers-reduced-motion:reduce){circle.seat{transition:none}}
+input[type=search]{font:inherit;font-size:.9rem;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);flex:1 1 200px;min-width:0}
+input[type=search]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent)}
+body{margin:0}
+</style></head><body>
+
+<div class="wrap">
+  <header>
+    <h1>Hémicycle des votes</h1>
+    <p class="sub" id="status">Chargement des données…</p>
+  </header>
+
+  <div class="controls">
+    <input id="q" type="search" placeholder="Filtrer : budget, crypto, amendement…" aria-label="Filtrer les scrutins">
+    <select id="pick" aria-label="Scrutin"></select>
+  </div>
+
+  <section class="card">
+    <p class="title" id="sTitle"></p>
+    <div class="meta" id="sMeta"></div>
+    <span class="res" id="sRes"></span>
+    <svg id="hemi" viewBox="0 0 1000 520" role="img" aria-label="Hémicycle"></svg>
+    <div class="tally" id="tally"></div>
+    <div class="pres" id="pres"></div>
+    <div class="chips" id="chips" role="group" aria-label="Mettre un groupe en évidence"></div>
+    <div class="tip" id="tip"></div>
+  </section>
+
+  <section class="card tablebox">
+    <table>
+      <thead><tr><th>Groupe</th><th>Répartition</th><th style="text-align:right">Présents</th><th style="text-align:right">Pour</th><th style="text-align:right">Contre</th><th style="text-align:right">Abst.</th></tr></thead>
+      <tbody id="groups"></tbody>
+    </table>
+  </section>
+
+  <p class="note" id="foot"></p>
+</div>
+
+<script>
+/* Ordre gauche → droite ; un groupe inconnu se place avant les non-inscrits. */
+const ORDRE=["LFI-NFP","LFI","GDR","EcoS","ECOS","ECO","SOC","LIOT","EPR","RE","Dem","DEM","HOR","DR","LR","UDR","RN","NI"];
+const rank=a=>{const i=ORDRE.findIndex(o=>o.toLowerCase()===String(a).toLowerCase());return i<0?ORDRE.length-1.5:i;};
+
+function layout(total){
+  const rows=12, r0=0.38, cx=500, cy=495, R=470;
+  const radii=[...Array(rows)].map((_,i)=>r0+(1-r0)*i/(rows-1));
+  const sumR=radii.reduce((a,b)=>a+b,0);
+  const counts=radii.map(r=>Math.round(total*r/sumR));
+  counts[rows-1]+=total-counts.reduce((a,b)=>a+b,0);
+  const seats=[];
+  radii.forEach((r,i)=>{const n=counts[i];
+    for(let k=0;k<n;k++){const a=Math.PI-(Math.PI*(k+.5)/n);
+      seats.push({a,r,x:cx+R*r*Math.cos(a),y:cy-R*r*Math.sin(a)});}});
+  seats.sort((p,q)=>q.a-p.a||p.r-q.r);
+  const dot=Math.min(R*(1-r0)/(rows-1), Math.PI*R/Math.max(1,counts[rows-1]))*0.42;
+  return {seats,dot};
+}
+
+const COL={pour:"var(--pour)",contre:"var(--contre)",abst:"var(--abst)",nv:"none",absent:"var(--absent)"};
+const LAB={pour:"Pour",contre:"Contre",abst:"Abstention",nv:"Présent, n'a pas voté",absent:"Absent"};
+const svg=document.getElementById("hemi"), tip=document.getElementById("tip");
+const NS="http://www.w3.org/2000/svg";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let REF={groupes:{},deputes:{}}, INDEX=null, cur=null, sel=null;
+const count=ms=>{const c={pour:0,contre:0,abst:0,nv:0,absent:0};ms.forEach(m=>c[m.pos]++);c.pres=c.pour+c.contre+c.abst+c.nv;return c;};
+const nom=id=>REF.deputes[id]?.nom||id||"";
+
+function build(s){
+  const groups=s.groupes.map(g=>{
+    const info=REF.groupes[g.po]||{abrege:g.po,libelle:g.po};
+    const m=[];const seen=new Set();
+    for(const k of ["pour","contre","abst","nv"]) for(const id of g[k]){m.push({pos:k,id});seen.add(id);}
+    for(const [id,d] of Object.entries(REF.deputes)) if(d.gp===g.po&&!seen.has(id)&&m.length<g.nb) m.push({pos:"absent",id});
+    while(m.length<g.nb) m.push({pos:"absent"});
+    return {code:info.abrege||g.po,nom:info.libelle||g.po,membres:m};
+  });
+  groups.sort((a,b)=>rank(a.code)-rank(b.code));
+  return groups;
+}
+
+function render(s){
+  const groups=build(s); cur={...s,groups}; sel=null;
+  const flat=[];groups.forEach((g,gi)=>g.membres.forEach(m=>flat.push({...m,g,gi})));
+  const {seats,dot}=layout(flat.length);
+  svg.innerHTML="";
+  seats.forEach((p,i)=>{const m=flat[i];const c=document.createElementNS(NS,"circle");
+    c.setAttribute("cx",p.x.toFixed(1));c.setAttribute("cy",p.y.toFixed(1));
+    if(m.pos==="nv"){c.setAttribute("r",(dot*.8).toFixed(1));c.setAttribute("fill","none");
+      c.style.stroke="var(--abst)";c.style.strokeWidth=(dot*.45).toFixed(1);}
+    else{c.setAttribute("r",dot.toFixed(1));c.setAttribute("fill",COL[m.pos]);}
+    c.setAttribute("class","seat g"+m.gi);
+    const t=document.createElementNS(NS,"title");t.textContent=`${nom(m.id)} (${m.g.code}) · ${LAB[m.pos]}`;c.appendChild(t);
+    c.addEventListener("click",()=>{select(m.gi,true);tip.innerHTML=`<b>${esc(nom(m.id)||"Député")}</b> · ${esc(m.g.code)} · ${LAB[m.pos]}`;});
+    svg.appendChild(c);});
+  const t=count(flat);
+  document.getElementById("tally").innerHTML=["pour","contre","abst","nv","absent"].filter(k=>k!=="nv"||t.nv).map(k=>
+    `<span>${k==="nv"?'<i class="ring"></i>':`<i class="dot" style="background:${COL[k]}"></i>`}${LAB[k]} <b class="num">${t[k]}</b></span>`).join("");
+  document.getElementById("pres").innerHTML=`<b class="num">${t.pres}</b> présents sur <span class="num">${flat.length}</span> · <span class="num">${Math.round(100*t.pres/Math.max(1,flat.length))} %</span><div class="pbar"><span style="width:${100*t.pres/Math.max(1,flat.length)}%"></span></div>`;
+  document.getElementById("sTitle").textContent=s.titre;
+  const lien=`https://www.assemblee-nationale.fr/dyn/${INDEX.legislature}/scrutins/${s.n}`;
+  document.getElementById("sMeta").innerHTML=`Scrutin n° ${s.n} · ${esc(s.date)}${s.type?` · ${esc(s.type)}`:""} · <a href="${lien}" target="_blank" rel="noopener">voir sur le site de l'Assemblée</a>`;
+  const adopt=s.sort?s.sort.startsWith("adopt"):t.pour>t.contre;
+  const r=document.getElementById("sRes");r.textContent=adopt?"Adopté":"Rejeté";r.className="res "+(adopt?"ok":"ko");
+  document.getElementById("chips").innerHTML=groups.map((g,gi)=>`<button class="chip" data-g="${gi}" aria-pressed="false" title="${esc(g.nom)}">${esc(g.code)}<small>${count(g.membres).pres}/${g.membres.length}</small></button>`).join("")
+    +`<button class="chip all" id="all" hidden>Tout afficher</button>`;
+  document.querySelectorAll(".chip[data-g]").forEach(b=>b.addEventListener("click",()=>select(+b.dataset.g)));
+  document.getElementById("all").addEventListener("click",()=>select(null));
+  document.getElementById("groups").innerHTML=groups.map((g,gi)=>{const c=count(g.membres);const n=g.membres.length||1;
+    const seg=k=>`<span style="width:${100*c[k]/n}%;background:${COL[k]}"></span>`;
+    return `<tr data-g="${gi}" style="cursor:pointer"><td title="${esc(g.nom)}"><b>${esc(g.code)}</b></td><td><div class="bar">${seg("pour")}${seg("contre")}${seg("abst")}</div></td>
+      <td class="n">${c.pres}/${g.membres.length}</td><td class="n">${c.pour}</td><td class="n">${c.contre}</td><td class="n">${c.abst}</td></tr>`}).join("");
+  document.querySelectorAll("#groups tr").forEach(tr=>tr.addEventListener("click",()=>select(+tr.dataset.g)));
+  select(null);
+}
+function select(gi,keep){
+  if(!keep&&gi!==null&&gi===sel) gi=null;
+  sel=gi;
+  svg.classList.toggle("focus",gi!==null);
+  svg.querySelectorAll("circle").forEach(c=>c.classList.toggle("on",gi!==null&&c.classList.contains("g"+gi)));
+  document.querySelectorAll(".chip[data-g]").forEach(b=>b.setAttribute("aria-pressed",String(+b.dataset.g===gi)));
+  document.querySelectorAll("#groups tr").forEach(tr=>tr.classList.toggle("on",+tr.dataset.g===gi));
+  document.getElementById("all").hidden=gi===null;
+  if(gi===null){tip.textContent="Touchez un groupe pour le mettre en évidence, ou un point pour voir le député.";return;}
+  const g=cur.groups[gi],c=count(g.membres);
+  tip.innerHTML=`<b>${esc(g.code)}</b> · ${esc(g.nom)} · ${c.pres} présents sur ${g.membres.length} · ${c.pour} pour, ${c.contre} contre, ${c.abst} abst.`;
+}
+
+const pick=document.getElementById("pick"), q=document.getElementById("q");
+function fill(){
+  const f=q.value.trim().toLowerCase();
+  const list=INDEX.scrutins.filter(s=>!f||s.titre.toLowerCase().includes(f)||String(s.n)===f).slice(0,400);
+  pick.innerHTML=list.map(s=>`<option value="${s.n}">${esc(s.date)} · n° ${s.n} · ${esc(s.titre.slice(0,110))}</option>`).join("")||"<option>Aucun scrutin</option>";
+}
+async function load(n){
+  try{const s=await (await fetch(`data/s/${n}.json`)).json();render(s);}
+  catch(e){tip.textContent=`Impossible de charger le scrutin n° ${n}.`;}
+}
+q.addEventListener("input",()=>{fill();if(pick.value)load(pick.value);});
+pick.addEventListener("change",()=>load(pick.value));
+
+(async()=>{
+  try{
+    [INDEX,REF]=await Promise.all([fetch("data/index.json").then(r=>r.json()),fetch("data/deputes.json").then(r=>r.json())]);
+  }catch(e){
+    document.getElementById("status").textContent="Données introuvables : lancez d'abord « python3 update.py » dans ce dossier.";return;
+  }
+  document.getElementById("status").textContent=`${INDEX.scrutins.length} scrutins · ${INDEX.legislature}e législature · mis à jour le ${INDEX.maj.replace("T"," à ")}`;
+  document.getElementById("foot").innerHTML=`Données : open data de l'Assemblée nationale (<a href="${esc(INDEX.source)}">fichier source</a>), converties sans retouche par update.py. Seuls les scrutins publics ont un détail nominatif. Les votes par délégation comptent comme présents.`;
+  fill(); if(INDEX.scrutins.length) load(INDEX.scrutins[0].n);
+})();
+</script>
+</body></html>

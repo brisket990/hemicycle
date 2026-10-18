@@ -1,0 +1,19 @@
+name: Mise à jour quotidienne
+on:
+  schedule: [{cron: "0 6 * * *"}]
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions: {contents: read, pages: write, id-token: write}
+concurrency: {group: pages, cancel-in-progress: true}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: {name: github-pages, url: "${{ steps.deploy.outputs.page_url }}"}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 update.py
+      - uses: actions/upload-pages-artifact@v3
+        with: {path: .}
+      - id: deploy
+        uses: actions/deploy-pages@v4
