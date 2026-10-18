@@ -1,6 +1,10 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Hémicycle des votes</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f3c88">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 /* Layout: one column — scrutin picker, hemicycle, tally, groups table */
@@ -257,5 +261,6 @@ pick.addEventListener("change",()=>load(pick.value));
   document.getElementById("foot").innerHTML=`Données : open data de l'Assemblée nationale (<a href="${esc(INDEX.source)}">fichier source</a>), converties sans retouche par update.py. Les informations sur chaque scrutin (objet, texte, auteur, horaire de la séance) viennent des mêmes fichiers officiels. Seuls les scrutins publics ont un détail nominatif. Les votes par délégation comptent comme présents.`;
   fill(); if(INDEX.scrutins.length) load(INDEX.scrutins[0].n);
 })();
+if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
 </script>
 </body></html>
