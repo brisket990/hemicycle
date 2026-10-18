@@ -1,4 +1,6 @@
-# Hémicycle des votes (auto-hébergé)
+# Hémicycle des votes
+
+Site : https://brisket990.github.io/hemicycle/
 
 Affiche chaque scrutin public de l'Assemblée nationale sous forme d'hémicycle :
 un point par député, vert = pour, rouge = contre, gris = abstention,
