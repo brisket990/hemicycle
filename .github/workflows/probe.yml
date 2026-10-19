@@ -1,0 +1,36 @@
+name: Reconnaissance hémicycle
+on:
+  push:
+    branches: [probe]
+permissions: {contents: write}
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          mkdir out && cd out
+          UA="Mozilla/5.0 (X11; Linux x86_64) hemicycle-probe"
+          curl -sSL -A "$UA" -o hemicycle.html "https://www.assemblee-nationale.fr/dyn/vos-deputes/hemicycle" || true
+          curl -sSL -A "$UA" -o hemicycle_siege70.html "https://www.assemblee-nationale.fr/dyn/vos-deputes/hemicycle?siege=70" || true
+          ls -la
+          # assets referenced (svg/js/json) mentioning hemicycle
+          grep -oE '(src|href|data-[a-z-]+)="[^"]+"' hemicycle.html | grep -iE 'hemi|svg|siege|plan|\.js' | sort -u > refs.txt || true
+          head -100 refs.txt
+          i=0; for u in $(grep -oE '"[^"]+\.(svg|json|js)[^"]*"' hemicycle.html | tr -d '"' | grep -iE 'hemi|siege|plan|place' | sort -u | head -15); do
+            case "$u" in http*) url="$u";; //*) url="https:$u";; /*) url="https://www.assemblee-nationale.fr$u";; *) continue;; esac
+            i=$((i+1)); curl -sSL -A "$UA" -o "asset_$i.$(echo $u | sed 's/.*\.\([a-z]*\).*/\1/')" "$url" && echo "$i $url" >> assets.txt || true
+          done
+          # AMO sample
+          curl -sSL -o amo.zip "https://data.assemblee-nationale.fr/static/openData/repository/17/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip"
+          mkdir amo && cd amo && unzip -q ../amo.zip && cd ..
+          grep -rlo "placeHemicycle" amo | head -3 > amo_files_with_place.txt
+          F=$(ls amo/json/acteur/*.json | head -1); cp "$F" acteur_sample.json
+          grep -rhoE '"placeHemicycle"[^,}]*' amo | sort | uniq -c | sort -rn | head -20 > place_values.txt
+          grep -rhoE '"placeHemicycle"[^,}]*' amo | wc -l >> place_values.txt
+          rm -rf amo amo.zip
+          ls -la
+      - run: |
+          cd out && git init -q && git checkout -q -b probe-out
+          git config user.name probe && git config user.email probe@users.noreply.github.com
+          git add -A && git commit -qm probe
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" probe-out
