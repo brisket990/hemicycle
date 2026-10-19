@@ -51,4 +51,5 @@ celle de l'ouverture de la séance : l'heure exacte de chaque vote n'est pas pub
 
 - Seuls les scrutins publics ont un détail par député ; les votes à main levée n'apparaissent pas.
 - Les votes par délégation comptent comme présents.
-- Les sièges sont rangés par groupe, de gauche à droite, pas à la place physique de chaque député.
+- Le plan des sièges vient de la page officielle « Situez votre député » ; si elle change de structure, le site revient automatiquement à l'affichage par groupe.
+- Sur le plan, chaque siège montre son occupant actuel : pour un vote ancien, un député remplacé depuis n'y figure pas (il reste compté dans les totaux).

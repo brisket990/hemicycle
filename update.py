@@ -20,6 +20,7 @@ URL_ACTEURS = os.environ.get(
 URL_DOSSIERS = os.environ.get("AN_URL_DOSSIERS", f"{BASE}/loi/dossiers_legislatifs/Dossiers_Legislatifs.json.zip")
 URL_AGENDA = os.environ.get("AN_URL_AGENDA", f"{BASE}/vp/reunions/Agenda.json.zip")
 URL_AMENDEMENTS = os.environ.get("AN_URL_AMENDEMENTS", f"{BASE}/loi/amendements_div_legis/Amendements.json.zip")
+URL_PLAN = os.environ.get("AN_URL_PLAN", "https://www.assemblee-nationale.fr/dyn/vos-deputes/hemicycle")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
@@ -75,11 +76,17 @@ def load_acteurs():
             a = d["acteur"]
             uid = txt(a.get("uid"))
             ident = (a.get("etatCivil") or {}).get("ident") or {}
-            gp = ""
+            gp, place = "", ""
             for m in arr((a.get("mandats") or {}).get("mandat")):
-                if m.get("typeOrgane") == "GP" and not txt(m.get("dateFin")):
+                if txt(m.get("dateFin")):
+                    continue
+                if m.get("typeOrgane") == "GP":
                     gp = txt(((m.get("organes") or {}).get("organeRef")))
+                elif m.get("typeOrgane") == "ASSEMBLEE":
+                    place = txt((m.get("mandature") or {}).get("placeHemicycle"))
             deputes[uid] = {"nom": f"{ident.get('prenom', '')} {ident.get('nom', '')}".strip(), "gp": gp}
+            if place:
+                deputes[uid]["place"] = place
     print(f"  {len(deputes)} députés, {len(groupes)} groupes")
     return groupes, deputes
 
@@ -300,6 +307,50 @@ def enrich_amendements(details):
     notice(f"Amendements : {lus} lus, {trouves} reliés à un scrutin sur {len(voulus)} amendements votés")
 
 
+def load_plan():
+    """Plan officiel des sièges : extrait le dessin SVG de la page « Situez votre député »."""
+    req = urllib.request.Request(URL_PLAN, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) hemicycle/1.0"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        page = r.read().decode("utf-8", "replace")
+    i = page.find("<svg")
+    j = page.find("</svg>", i)
+    if i < 0 or j < 0:
+        raise ValueError("dessin de l'hémicycle introuvable dans la page")
+    svg = page[i:j]
+    vb = re.search(r'viewBox="([^"]+)"', svg)
+    places, decor = {}, []
+    for tag in re.findall(r"<path\b[^>]*?/?>", svg, re.S):
+        d = re.search(r'\sd="([^"]+)"', tag)
+        if not d:
+            continue
+        tr = re.search(r'transform="([^"]+)"', tag)
+        item = {"d": " ".join(d.group(1).split())}
+        if tr:
+            item["t"] = tr.group(1)
+        sid = re.search(r'id="p(\d+)"', tag)
+        if sid and 'class="place"' in tag:
+            places[sid.group(1)] = item
+        else:
+            sw = re.search(r'stroke-width="([^"]+)"', tag)
+            if 'class="contour"' in tag:
+                item["k"] = "contour"
+            elif sw:
+                item["k"] = "trait"
+                item["w"] = float(sw.group(1))
+            else:
+                item["k"] = "plein"
+            decor.append(item)
+    if len(places) < 400:
+        raise ValueError(f"seulement {len(places)} sièges trouvés")
+    pres = re.search(r'<circle[^>]*id="ppresident"[^>]*>', svg)
+    president = None
+    if pres:
+        g = lambda k: re.search(k + r'="([^"]+)"', pres.group(0))
+        president = {k: float(g(k).group(1)) for k in ("cx", "cy", "r") if g(k)}
+    notice(f"Plan : {len(places)} sièges récupérés depuis la page officielle")
+    return {"viewBox": vb.group(1) if vb else "0 0 237 164", "places": places, "decor": decor, "president": president}
+
+
 def write(path, obj):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -319,6 +370,11 @@ def main():
     for num, d in details.items():
         write(os.path.join(OUT, "s", f"{num}.json"), d)
     write(os.path.join(OUT, "deputes.json"), {"groupes": groupes, "deputes": deputes})
+    try:
+        write(os.path.join(OUT, "plan.json"), load_plan())
+    except Exception as e:
+        notice(f"Plan des sièges ignoré (affichage par groupe à la place) : {e}")
+    notice(f"Sièges : {sum(1 for d in deputes.values() if d.get('place'))} députés avec un numéro de siège")
     write(os.path.join(OUT, "index.json"), {
         "legislature": LEGISLATURE,
         "maj": datetime.datetime.now().isoformat(timespec="minutes"),

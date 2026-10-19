@@ -10,17 +10,17 @@
 /* Layout: one column — scrutin picker, hemicycle, tally, groups table */
 :root{
   --bg:#f5f6f8; --surface:#ffffff; --fg:#1b2130; --muted:#5d6577; --line:#dde1e8;
-  --accent:#1f3c88;
+  --accent:#1f3c88; --plan-fond:#eceef2; --plan-trait:#c9ced7; --plan-vide:#e3e6eb;
   --pour:#2e9e57; --contre:#d1443a; --abst:#8b919c; --absent:#c9ced7;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#12151c; --surface:#1a1f29; --fg:#e7eaf0; --muted:#9aa2b2; --line:#2a3140;
-  --accent:#8aa7ff; --pour:#45c072; --contre:#ef6257; --abst:#8d94a1; --absent:#3a4252; color-scheme:dark}}
+  --accent:#8aa7ff; --plan-fond:#222835; --plan-trait:#3a4252; --plan-vide:#2a3140; --pour:#45c072; --contre:#ef6257; --abst:#8d94a1; --absent:#3a4252; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#12151c; --surface:#1a1f29; --fg:#e7eaf0; --muted:#9aa2b2; --line:#2a3140;
-  --accent:#8aa7ff; --pour:#45c072; --contre:#ef6257; --abst:#8d94a1; --absent:#3a4252; color-scheme:dark}
+  --accent:#8aa7ff; --plan-fond:#222835; --plan-trait:#3a4252; --plan-vide:#2a3140; --pour:#45c072; --contre:#ef6257; --abst:#8d94a1; --absent:#3a4252; color-scheme:dark}
 body{background:var(--bg);color:var(--fg);font-family:var(--sans);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 32px}
 .wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
@@ -53,9 +53,23 @@ td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;
 .tablebox{overflow-x:auto}
 .note{font-size:.8rem;color:var(--muted);line-height:1.5}
 .note code{font-family:var(--mono);font-size:.78rem}
-circle.seat{cursor:pointer;transition:opacity .2s,stroke-width .2s}
-svg.focus circle.seat{opacity:.1}
-svg.focus circle.seat.on{opacity:1;stroke:var(--fg);stroke-width:1.6}
+.seat{cursor:pointer;transition:opacity .2s}
+svg.focus .seat{opacity:.12}
+svg.focus .seat.on{opacity:1}
+svg.focus circle.seat.on{stroke:var(--fg);stroke-width:1.6}
+svg.plan .seat{stroke:var(--surface);stroke-width:1.2}
+svg.plan .seat.nv{stroke:var(--abst);stroke-width:4}
+svg.plan .seat.vide{fill:var(--plan-vide);cursor:default}
+svg.plan .seat.found{stroke:var(--fg);stroke-width:6;opacity:1}
+.plan-contour{fill:var(--plan-fond)}
+.plan-trait{fill:var(--surface);stroke:var(--plan-trait)}
+.plan-plein{fill:var(--plan-trait);stroke:var(--surface)}
+.viewbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-top:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:inherit;font-size:.8rem;padding:6px 10px;border:0;background:var(--surface);color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#who{font:inherit;font-size:.85rem;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);flex:1 1 180px;min-width:0;max-width:280px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}
 .chip{font:inherit;font-size:.78rem;font-weight:600;padding:5px 10px;border-radius:99px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;display:flex;gap:6px;align-items:center}
 .chip small{font-family:var(--mono);font-weight:500;color:var(--muted)}
@@ -101,6 +115,14 @@ body{margin:0}
     <div class="when" id="sWhen"></div>
     <span class="res" id="sRes"></span>
     <div id="sInfo"></div>
+    <div class="viewbar" id="viewbar" hidden>
+      <div class="seg" role="group" aria-label="Disposition">
+        <button id="vPlan" aria-pressed="true">Places réelles</button>
+        <button id="vGroupe" aria-pressed="false">Par groupe</button>
+      </div>
+      <input id="who" list="whoList" placeholder="Situer un député…" aria-label="Situer un député">
+      <datalist id="whoList"></datalist>
+    </div>
     <svg id="hemi" viewBox="0 0 1000 520" role="img" aria-label="Hémicycle"></svg>
     <div class="tally" id="tally"></div>
     <div class="pres" id="pres"></div>
@@ -163,17 +185,7 @@ function build(s){
 function render(s){
   const groups=build(s); cur={...s,groups}; sel=null;
   const flat=[];groups.forEach((g,gi)=>g.membres.forEach(m=>flat.push({...m,g,gi})));
-  const {seats,dot}=layout(flat.length);
-  svg.innerHTML="";
-  seats.forEach((p,i)=>{const m=flat[i];const c=document.createElementNS(NS,"circle");
-    c.setAttribute("cx",p.x.toFixed(1));c.setAttribute("cy",p.y.toFixed(1));
-    if(m.pos==="nv"){c.setAttribute("r",(dot*.8).toFixed(1));c.setAttribute("fill","none");
-      c.style.stroke="var(--abst)";c.style.strokeWidth=(dot*.45).toFixed(1);}
-    else{c.setAttribute("r",dot.toFixed(1));c.setAttribute("fill",COL[m.pos]);}
-    c.setAttribute("class","seat g"+m.gi);
-    const t=document.createElementNS(NS,"title");t.textContent=`${nom(m.id)} (${m.g.code}) · ${LAB[m.pos]}`;c.appendChild(t);
-    c.addEventListener("click",()=>{select(m.gi,true);tip.innerHTML=`<b>${esc(nom(m.id)||"Député")}</b> · ${esc(m.g.code)} · ${LAB[m.pos]}`;});
-    svg.appendChild(c);});
+  if(PLAN&&vue==="plan") drawPlan(flat); else drawGroupes(flat);
   const t=count(flat);
   document.getElementById("tally").innerHTML=["pour","contre","abst","nv","absent"].filter(k=>k!=="nv"||t.nv).map(k=>
     `<span>${k==="nv"?'<i class="ring"></i>':`<i class="dot" style="background:${COL[k]}"></i>`}${LAB[k]} <b class="num">${t[k]}</b></span>`).join("");
@@ -208,6 +220,55 @@ function quand(s){
   if(seance) parts.push(seance);
   return parts.join(" · ");
 }
+let PLAN=null, vue="plan";
+function seatClick(m){select(m.gi,true);tip.innerHTML=`<b>${esc(nom(m.id)||"Député")}</b> · ${esc(m.g.code)} · ${LAB[m.pos]}`;}
+function drawGroupes(flat){
+  const {seats,dot}=layout(flat.length);
+  svg.setAttribute("viewBox","0 0 1000 520");svg.classList.remove("plan");svg.innerHTML="";
+  seats.forEach((p,i)=>{const m=flat[i];const c=document.createElementNS(NS,"circle");
+    c.setAttribute("cx",p.x.toFixed(1));c.setAttribute("cy",p.y.toFixed(1));
+    if(m.pos==="nv"){c.setAttribute("r",(dot*.8).toFixed(1));c.setAttribute("fill","none");
+      c.style.stroke="var(--abst)";c.style.strokeWidth=(dot*.45).toFixed(1);}
+    else{c.setAttribute("r",dot.toFixed(1));c.setAttribute("fill",COL[m.pos]);}
+    c.setAttribute("class","seat g"+m.gi);if(m.id)c.dataset.id=m.id;
+    const t=document.createElementNS(NS,"title");t.textContent=`${nom(m.id)} (${m.g.code}) · ${LAB[m.pos]}`;c.appendChild(t);
+    c.addEventListener("click",()=>seatClick(m));
+    svg.appendChild(c);});
+}
+function drawPlan(flat){
+  const parId={};flat.forEach(m=>{if(m.id)parId[m.id]=m;});
+  const occupant={};for(const [id,d] of Object.entries(REF.deputes)) if(d.place) occupant[d.place]=id;
+  svg.setAttribute("viewBox",PLAN.viewBox);svg.classList.add("plan");svg.innerHTML="";
+  const g=document.createElementNS(NS,"g");svg.appendChild(g);
+  const mk=(it,cls)=>{const p=document.createElementNS(NS,"path");p.setAttribute("d",it.d);if(it.t)p.setAttribute("transform",it.t);p.setAttribute("class",cls);g.appendChild(p);return p;};
+  PLAN.decor.forEach(it=>{const p=mk(it,"plan-"+it.k);if(it.w)p.style.strokeWidth=it.w;});
+  for(const [num,it] of Object.entries(PLAN.places)){
+    const id=occupant[num], m=id&&parId[id];
+    const p=mk(it,"seat");
+    const t=document.createElementNS(NS,"title");p.appendChild(t);
+    if(!m){p.classList.add("vide");t.textContent=id?`${nom(id)} · n'était pas député lors de ce vote`:`Siège ${num} · inoccupé`;continue;}
+    p.classList.add("g"+m.gi);p.dataset.id=id;
+    if(m.pos==="nv"){p.classList.add("nv");p.style.fill="var(--surface)";}else p.style.fill=COL[m.pos];
+    t.textContent=`${nom(id)} (${m.g.code}) · ${LAB[m.pos]}`;
+    p.addEventListener("click",()=>seatClick(m));
+  }
+  if(PLAN.president){const c=document.createElementNS(NS,"circle");const P=PLAN.president;
+    c.setAttribute("cx",P.cx);c.setAttribute("cy",P.cy);c.setAttribute("r",P.r);c.setAttribute("class","plan-plein");
+    const t=document.createElementNS(NS,"title");t.textContent="Présidence de séance";c.appendChild(t);g.appendChild(c);}
+}
+function situer(){
+  const v=document.getElementById("who").value.trim().toLowerCase();if(!v||!cur)return;
+  const id=Object.keys(REF.deputes).find(k=>REF.deputes[k].nom.toLowerCase()===v)||Object.keys(REF.deputes).find(k=>REF.deputes[k].nom.toLowerCase().includes(v));
+  svg.querySelectorAll(".found").forEach(e=>e.classList.remove("found"));
+  if(!id){tip.textContent="Aucun député trouvé avec ce nom.";return;}
+  const el=svg.querySelector(`[data-id="${id}"]`);
+  let m=null;cur.groups.forEach((g,gi)=>g.membres.forEach(x=>{if(x.id===id)m={...x,g,gi};}));
+  if(el){el.classList.add("found");}
+  tip.innerHTML=m?`<b>${esc(nom(id))}</b> · ${esc(m.g.code)} · ${LAB[m.pos]}${REF.deputes[id].place?` · siège n° ${esc(REF.deputes[id].place)}`:""}`
+    :`<b>${esc(nom(id))}</b> n'était pas député lors de ce vote.`;
+}
+function setVue(v){vue=v;document.getElementById("vPlan").setAttribute("aria-pressed",String(v==="plan"));
+  document.getElementById("vGroupe").setAttribute("aria-pressed",String(v!=="plan"));if(cur)render(cur);}
 function renderInfo(s){
   const i=s.info||{};
   document.getElementById("sWhen").innerHTML=quand(s);
@@ -229,7 +290,7 @@ function select(gi,keep){
   if(!keep&&gi!==null&&gi===sel) gi=null;
   sel=gi;
   svg.classList.toggle("focus",gi!==null);
-  svg.querySelectorAll("circle").forEach(c=>c.classList.toggle("on",gi!==null&&c.classList.contains("g"+gi)));
+  svg.querySelectorAll(".seat").forEach(c=>c.classList.toggle("on",gi!==null&&c.classList.contains("g"+gi)));
   document.querySelectorAll(".chip[data-g]").forEach(b=>b.setAttribute("aria-pressed",String(+b.dataset.g===gi)));
   document.querySelectorAll("#groups tr").forEach(tr=>tr.classList.toggle("on",+tr.dataset.g===gi));
   document.getElementById("all").hidden=gi===null;
@@ -254,11 +315,17 @@ pick.addEventListener("change",()=>load(pick.value));
 (async()=>{
   try{
     [INDEX,REF]=await Promise.all([fetch("data/index.json").then(r=>r.json()),fetch("data/deputes.json").then(r=>r.json())]);
+    try{PLAN=await fetch("data/plan.json").then(r=>r.ok?r.json():null);}catch(e){PLAN=null;}
   }catch(e){
     document.getElementById("status").textContent="Données introuvables : lancez d'abord « python3 update.py » dans ce dossier.";return;
   }
   document.getElementById("status").textContent=`${INDEX.scrutins.length} scrutins · ${INDEX.legislature}e législature · mis à jour le ${INDEX.maj.replace("T"," à ")}`;
-  document.getElementById("foot").innerHTML=`Données : open data de l'Assemblée nationale (<a href="${esc(INDEX.source)}">fichier source</a>), converties sans retouche par update.py. Les informations sur chaque scrutin (objet, texte, auteur, horaire de la séance) viennent des mêmes fichiers officiels. Seuls les scrutins publics ont un détail nominatif. Les votes par délégation comptent comme présents.`;
+  document.getElementById("foot").innerHTML=`Données : open data de l'Assemblée nationale (<a href="${esc(INDEX.source)}">fichier source</a>), converties sans retouche par update.py. Plan des sièges : Assemblée nationale (page « Situez votre député »). Sur le plan, chaque siège montre son occupant actuel ; un député remplacé depuis un vote ancien n'y figure pas mais reste compté dans les totaux. Les informations sur chaque scrutin (objet, texte, auteur, horaire de la séance) viennent des mêmes fichiers officiels. Seuls les scrutins publics ont un détail nominatif. Les votes par délégation comptent comme présents.`;
+  document.getElementById("whoList").innerHTML=Object.values(REF.deputes).map(d=>`<option value="${esc(d.nom)}">`).join("");
+  document.getElementById("who").addEventListener("change",situer);
+  document.getElementById("viewbar").hidden=false;
+  if(PLAN){document.getElementById("vPlan").addEventListener("click",()=>setVue("plan"));document.getElementById("vGroupe").addEventListener("click",()=>setVue("groupe"));}
+  else{vue="groupe";document.querySelector("#viewbar .seg").hidden=true;}
   fill(); if(INDEX.scrutins.length) load(INDEX.scrutins[0].n);
 })();
 if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
