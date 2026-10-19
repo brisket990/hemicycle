@@ -1,0 +1,5 @@
+href="https://www2.assemblee-nationale.fr/dans-l-hemicycle/budget-et-securite-sociale"
+src="/assets/build/hemicycle_page.js"
+src="/assets/build/main.js"
+src="/dyn/es6/getvariable.js"
+src="https://cdnjs.cloudflare.com/ajax/libs/superfish/1.7.3/superfish.min.js"
