@@ -1,0 +1,24 @@
+plugins { id "com.android.application" }
+android {
+    namespace "fr.brisket990.hemicycle"
+    compileSdk 34
+    defaultConfig {
+        applicationId "fr.brisket990.hemicycle"
+        minSdk 24
+        targetSdk 34
+        versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+        versionName "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+    }
+    signingConfigs {
+        maison {
+            storeFile file("hemicycle.keystore")
+            storePassword "hemicycle"
+            keyAlias "hemicycle"
+            keyPassword "hemicycle"
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.maison }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
